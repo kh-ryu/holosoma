@@ -38,7 +38,8 @@ esac
 
 # Source retargeting setup script (for retargeting and data conversion)
 echo "Sourcing retargeting setup..."
-source "$PROJECT_ROOT/scripts/source_retargeting_setup.sh"
+RETARGETING_CONDA_ENV_NAME="${RETARGETING_CONDA_ENV_NAME:-hsretargeting}" \
+    source "$PROJECT_ROOT/scripts/source_retargeting_setup.sh"
 
 # Change to retargeting directory
 cd "$RETARGETING_DIR"
@@ -122,22 +123,34 @@ else
 fi
 
 # Step 1: Run retargeting
-echo "Running retargeting..."
-python examples/robot_retarget.py --data_path "$LAFAN_DATA_DIR" --task-type robot_only --task-name dance2_subject1 --data_format lafan --task-config.ground-range -10 10 --save_dir "$RETARGETING_DIR/demo_results/g1/robot_only/lafan" --retargeter.foot-sticking-tolerance 0.02
+RETARGETED_FILE="$RETARGETING_DIR/demo_results/g1/robot_only/lafan/dance2_subject1.npz"
+if [ -f "$RETARGETED_FILE" ]; then
+    echo "Retargeted file already exists at $RETARGETED_FILE. Skipping retargeting."
+else
+    echo "Running retargeting..."
+    python examples/robot_retarget.py --data_path "$LAFAN_DATA_DIR" --task-type robot_only --task-name dance2_subject1 --data_format lafan --task-config.ground-range -10 10 --save_dir "$RETARGETING_DIR/demo_results/g1/robot_only/lafan" --retargeter.foot-sticking-tolerance 0.02
+fi
 
 # Step 2: Run data conversion
 echo "Running data conversion..."
-python data_conversion/convert_data_format_mj.py --input_file "$RETARGETING_DIR/demo_results/g1/robot_only/lafan/dance2_subject1.npz" --output_fps 50 --output_name "$RETARGETING_DIR/converted_res/robot_only/dance2_subject1_mj_fps50.npz" --data_format lafan --object_name "ground" --once
+CONVERT_HEADLESS_ARGS=()
+if [ -z "${DISPLAY:-}" ]; then
+    echo "DISPLAY is not set. Running data conversion in headless mode."
+    CONVERT_HEADLESS_ARGS+=(--headless)
+    CONVERT_HEADLESS_ARGS+=(--live-viser)
+fi
+python data_conversion/convert_data_format_mj.py --input_file "$RETARGETED_FILE" --output_fps 50 --output_name "$RETARGETING_DIR/converted_res/robot_only/dance2_subject1_mj_fps50.npz" --data_format lafan --object_name "ground" --once "${CONVERT_HEADLESS_ARGS[@]}"
 
 # Step 3: Source IsaacSim setup script (for whole-body tracking training)
 echo "Sourcing IsaacSim setup..."
 cd "$PROJECT_ROOT"
-source "$PROJECT_ROOT/scripts/source_isaacsim_setup.sh"
+ISAACSIM_CONDA_ENV_NAME="${ISAACSIM_CONDA_ENV_NAME:-hssim}" \
+    source "$PROJECT_ROOT/scripts/source_isaacsim_setup.sh"
 
 # Step 4: Run whole-body tracking training
 echo "Running whole-body tracking training..."
 CONVERTED_FILE="$RETARGETING_DIR/converted_res/robot_only/dance2_subject1_mj_fps50.npz"
-python src/holosoma/holosoma/train_agent.py \
+DISPLAY= python src/holosoma/holosoma/train_agent.py \
     exp:g1-29dof-wbt \
     logger:wandb \
     --command.setup_terms.motion_command.params.motion_config.motion_file="$CONVERTED_FILE"

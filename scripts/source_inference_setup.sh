@@ -5,7 +5,7 @@ elif [ -n "${ZSH_VERSION}" ]; then
     SCRIPT_DIR=$( cd -- "$( dirname -- "${(%):-%x}" )" &> /dev/null && pwd )
 fi
 source ${SCRIPT_DIR}/source_common.sh
-source ${CONDA_ROOT}/bin/activate hsinference
+activate_conda_env "hsinference" || { return 1 2>/dev/null || exit 1; }
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${CONDA_ROOT}/envs/hsinference/lib/python3.10/site-packages/lib
 
 # Check UFW status if ufw command exists

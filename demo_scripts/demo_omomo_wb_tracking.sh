@@ -8,6 +8,12 @@ set -e  # Exit on error
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+RETARGETING_DIR="$PROJECT_ROOT/src/holosoma_retargeting/holosoma_retargeting"
+
+if [ ! -d "$RETARGETING_DIR" ]; then
+    echo "Error: retargeting directory not found at $RETARGETING_DIR"
+    exit 1
+fi
 
 # Detect operating system and check if it's supported
 OS="$(uname -s)"
@@ -35,15 +41,20 @@ echo "Sourcing retargeting setup..."
 source "$PROJECT_ROOT/scripts/source_retargeting_setup.sh"
 
 # Change to retargeting directory
-cd "$PROJECT_ROOT/src/holosoma_retargeting/"
+cd "$RETARGETING_DIR"
 
 # Step 1: Run retargeting
 echo "Running retargeting..."
-python examples/robot_retarget.py --data_path demo_data/OMOMO_new --task-type robot_only --task-name sub3_largebox_003 --data_format smplh
+python examples/robot_retarget.py --data_path "$RETARGETING_DIR/demo_data/OMOMO_new" --task-type robot_only --task-name sub3_largebox_003 --data_format smplh
 
 # Step 2: Run data conversion
 echo "Running data conversion..."
-python data_conversion/convert_data_format_mj.py --input_file ./demo_results/g1/robot_only/omomo/sub3_largebox_003.npz --output_fps 50 --output_name converted_res/robot_only/sub3_largebox_003_mj_fps50.npz --data_format smplh --object_name "ground" --once
+CONVERT_HEADLESS_ARGS=()
+if [ -z "${DISPLAY:-}" ]; then
+    echo "DISPLAY is not set. Running data conversion in headless mode."
+    CONVERT_HEADLESS_ARGS+=(--headless)
+fi
+python data_conversion/convert_data_format_mj.py --input_file "$RETARGETING_DIR/demo_results/g1/robot_only/omomo/sub3_largebox_003.npz" --output_fps 50 --output_name "$RETARGETING_DIR/converted_res/robot_only/sub3_largebox_003_mj_fps50.npz" --data_format smplh --object_name "ground" --once "${CONVERT_HEADLESS_ARGS[@]}"
 
 # Step 3: Source IsaacSim setup script (for whole-body tracking training)
 echo "Sourcing IsaacSim setup..."
@@ -52,10 +63,10 @@ source "$PROJECT_ROOT/scripts/source_isaacsim_setup.sh"
 
 # Step 4: Run whole-body tracking training
 echo "Running whole-body tracking training..."
-CONVERTED_FILE="$PROJECT_ROOT/src/holosoma_retargeting/converted_res/robot_only/sub3_largebox_003_mj_fps50.npz"
+CONVERTED_FILE="$RETARGETING_DIR/converted_res/robot_only/sub3_largebox_003_mj_fps50.npz"
 python src/holosoma/holosoma/train_agent.py \
     exp:g1-29dof-wbt \
     logger:wandb \
-    --command.setup_terms.motion_command.params.motion_config.motion_file=$CONVERTED_FILE
+    --command.setup_terms.motion_command.params.motion_config.motion_file="$CONVERTED_FILE"
 
 echo "Done!"
