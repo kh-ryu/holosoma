@@ -10,6 +10,19 @@ echo "conda environment name is set to: $CONDA_ENV_NAME"
 
 # Create overall workspace
 source ${SCRIPT_DIR}/source_common.sh
+
+run_conda() {
+  LD_LIBRARY_PATH="$CONDA_ROOT/lib:${LD_LIBRARY_PATH:-}" \
+    CONDA_SOLVER=classic \
+    "$CONDA_ROOT/bin/conda" "$@"
+}
+
+run_mamba() {
+  LD_LIBRARY_PATH="$CONDA_ROOT/lib:${LD_LIBRARY_PATH:-}" \
+    MAMBA_ROOT_PREFIX=$CONDA_ROOT \
+    "$CONDA_ROOT/bin/mamba" "$@"
+}
+
 ENV_ROOT=$CONDA_ROOT/envs/$CONDA_ENV_NAME
 SENTINEL_FILE=${WORKSPACE_DIR}/.env_setup_retargeting_$CONDA_ENV_NAME
 echo "SENTINEL_FILE: $SENTINEL_FILE"
@@ -48,10 +61,14 @@ if [[ ! -f $SENTINEL_FILE ]]; then
 
   # Create the conda environment
   if [[ ! -d $ENV_ROOT ]]; then
-    $CONDA_ROOT/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-    $CONDA_ROOT/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-    $CONDA_ROOT/bin/conda install -y mamba -c conda-forge -n base
-    MAMBA_ROOT_PREFIX=$CONDA_ROOT $CONDA_ROOT/bin/mamba create -y -n $CONDA_ENV_NAME python=3.11 -c conda-forge --override-channels
+    run_conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+    run_conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+    run_conda install -y -n base -c conda-forge libstdcxx-ng libgcc-ng
+    run_conda install -y mamba -c conda-forge -n base
+    if ! run_mamba create -y -n $CONDA_ENV_NAME python=3.11 -c conda-forge --override-channels; then
+      echo "mamba create failed; falling back to conda create"
+      run_conda create -y -n $CONDA_ENV_NAME python=3.11 -c conda-forge --override-channels
+    fi
   fi
 
   source $CONDA_ROOT/bin/activate $CONDA_ENV_NAME

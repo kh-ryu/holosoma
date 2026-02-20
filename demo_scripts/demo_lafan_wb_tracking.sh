@@ -8,6 +8,12 @@ set -e  # Exit on error
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+RETARGETING_DIR="$PROJECT_ROOT/src/holosoma_retargeting/holosoma_retargeting"
+
+if [ ! -d "$RETARGETING_DIR" ]; then
+    echo "Error: retargeting directory not found at $RETARGETING_DIR"
+    exit 1
+fi
 
 # Detect operating system and check if it's supported
 OS="$(uname -s)"
@@ -35,23 +41,23 @@ echo "Sourcing retargeting setup..."
 source "$PROJECT_ROOT/scripts/source_retargeting_setup.sh"
 
 # Change to retargeting directory
-cd "$PROJECT_ROOT/src/holosoma_retargeting/"
+cd "$RETARGETING_DIR"
 
 # Step 0: Download and process LAFAN data if needed
 echo "Checking LAFAN data availability..."
-LAFAN_DATA_DIR="demo_data/lafan"
-LAFAN_TEMP_DIR="demo_data/lafan_temp"
-LAFAN_ZIP="demo_data/lafan1.zip"
-DATA_UTILS_DIR="data_utils"
+LAFAN_DATA_DIR="$RETARGETING_DIR/demo_data/lafan"
+LAFAN_TEMP_DIR="$RETARGETING_DIR/demo_data/lafan_temp"
+LAFAN_ZIP="$RETARGETING_DIR/demo_data/lafan1.zip"
+DATA_UTILS_DIR="$RETARGETING_DIR/data_utils"
 
 # Check if processed LAFAN data already exists
-if [ -d "$LAFAN_DATA_DIR" ] && [ "$(ls -A $LAFAN_DATA_DIR/*.npy 2>/dev/null)" ]; then
+if [ -d "$LAFAN_DATA_DIR" ] && compgen -G "$LAFAN_DATA_DIR/*.npy" > /dev/null; then
     echo "LAFAN data already processed. Skipping download and processing."
 else
     echo "LAFAN data not found. Downloading and processing..."
 
     # Create demo_data directory if it doesn't exist
-    mkdir -p demo_data
+    mkdir -p "$RETARGETING_DIR/demo_data"
 
     # Download lafan1.zip if it doesn't exist
     if [ ! -f "$LAFAN_ZIP" ]; then
@@ -62,7 +68,7 @@ else
     fi
 
     # Uncompress lafan1.zip to temp directory
-    if [ ! -d "$LAFAN_TEMP_DIR" ] || [ -z "$(ls -A $LAFAN_TEMP_DIR/*.bvh 2>/dev/null)" ]; then
+    if [ ! -d "$LAFAN_TEMP_DIR" ] || ! compgen -G "$LAFAN_TEMP_DIR/*.bvh" > /dev/null; then
         echo "Uncompressing lafan1.zip..."
         mkdir -p "$LAFAN_TEMP_DIR"
         unzip -q -o "$LAFAN_ZIP" -d "$LAFAN_TEMP_DIR"
@@ -80,37 +86,48 @@ else
         echo "LAFAN BVH files already extracted. Skipping extraction."
     fi
 
-    # Ensure lafan1 processing code is available in data_utils
-    if [ ! -d "$DATA_UTILS_DIR/lafan1" ]; then
-        echo "Cloning ubisoft-laforge-animation-dataset for processing code..."
-        cd "$DATA_UTILS_DIR"
-        if [ ! -d "ubisoft-laforge-animation-dataset" ]; then
-            git clone -q https://github.com/ubisoft/ubisoft-laforge-animation-dataset.git
+    # Ensure lafan1 processing code is available in data_utils.
+    # Use GIT_LFS_SKIP_SMUDGE to avoid downloading large LFS objects that are not needed.
+    LAFAN_CODE_DIR="$DATA_UTILS_DIR/lafan1"
+    UBISOFT_REPO_DIR="$DATA_UTILS_DIR/ubisoft-laforge-animation-dataset"
+    if [ ! -d "$LAFAN_CODE_DIR" ]; then
+        echo "Preparing lafan1 processing code..."
+        pushd "$DATA_UTILS_DIR" > /dev/null
+        if [ ! -d "$UBISOFT_REPO_DIR/lafan1" ]; then
+            if [ ! -d "$UBISOFT_REPO_DIR" ]; then
+                GIT_LFS_SKIP_SMUDGE=1 git clone -q --depth 1 https://github.com/ubisoft/ubisoft-laforge-animation-dataset.git
+            else
+                GIT_LFS_SKIP_SMUDGE=1 git -C "$UBISOFT_REPO_DIR" checkout -q HEAD -- lafan1 || true
+            fi
         fi
-        if [ -d "ubisoft-laforge-animation-dataset/lafan1" ] && [ ! -d "lafan1" ]; then
-            mv ubisoft-laforge-animation-dataset/lafan1 .
+        if [ -d "$UBISOFT_REPO_DIR/lafan1" ] && [ ! -d "$LAFAN_CODE_DIR" ]; then
+            cp -r "$UBISOFT_REPO_DIR/lafan1" "$LAFAN_CODE_DIR"
         fi
-        cd ..
+        popd > /dev/null
+        if [ ! -d "$LAFAN_CODE_DIR" ]; then
+            echo "Error: failed to prepare lafan1 processing code at $LAFAN_CODE_DIR"
+            exit 1
+        fi
     else
         echo "lafan1 processing code already available."
     fi
 
     # Convert BVH files to .npy format
     echo "Converting BVH files to .npy format..."
-    cd "$DATA_UTILS_DIR"
-    python extract_global_positions.py --input_dir "../$LAFAN_TEMP_DIR" --output_dir "../$LAFAN_DATA_DIR"
-    cd ..
+    pushd "$DATA_UTILS_DIR" > /dev/null
+    python extract_global_positions.py --input_dir "$LAFAN_TEMP_DIR" --output_dir "$LAFAN_DATA_DIR"
+    popd > /dev/null
 
     echo "LAFAN data processing complete!"
 fi
 
 # Step 1: Run retargeting
 echo "Running retargeting..."
-python examples/robot_retarget.py --data_path demo_data/lafan --task-type robot_only --task-name dance2_subject1 --data_format lafan --task-config.ground-range -10 10 --save_dir demo_results/g1/robot_only/lafan --retargeter.foot-sticking-tolerance 0.02
+python examples/robot_retarget.py --data_path "$LAFAN_DATA_DIR" --task-type robot_only --task-name dance2_subject1 --data_format lafan --task-config.ground-range -10 10 --save_dir "$RETARGETING_DIR/demo_results/g1/robot_only/lafan" --retargeter.foot-sticking-tolerance 0.02
 
 # Step 2: Run data conversion
 echo "Running data conversion..."
-python data_conversion/convert_data_format_mj.py --input_file ./demo_results/g1/robot_only/lafan/dance2_subject1.npz --output_fps 50 --output_name converted_res/robot_only/dance2_subject1_mj_fps50.npz --data_format lafan --object_name "ground" --once
+python data_conversion/convert_data_format_mj.py --input_file "$RETARGETING_DIR/demo_results/g1/robot_only/lafan/dance2_subject1.npz" --output_fps 50 --output_name "$RETARGETING_DIR/converted_res/robot_only/dance2_subject1_mj_fps50.npz" --data_format lafan --object_name "ground" --once
 
 # Step 3: Source IsaacSim setup script (for whole-body tracking training)
 echo "Sourcing IsaacSim setup..."
@@ -119,10 +136,10 @@ source "$PROJECT_ROOT/scripts/source_isaacsim_setup.sh"
 
 # Step 4: Run whole-body tracking training
 echo "Running whole-body tracking training..."
-CONVERTED_FILE="$PROJECT_ROOT/src/holosoma_retargeting/converted_res/robot_only/dance2_subject1_mj_fps50.npz"
+CONVERTED_FILE="$RETARGETING_DIR/converted_res/robot_only/dance2_subject1_mj_fps50.npz"
 python src/holosoma/holosoma/train_agent.py \
     exp:g1-29dof-wbt \
     logger:wandb \
-    --command.setup_terms.motion_command.params.motion_config.motion_file=$CONVERTED_FILE
+    --command.setup_terms.motion_command.params.motion_config.motion_file="$CONVERTED_FILE"
 
 echo "Done!"

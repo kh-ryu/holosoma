@@ -10,6 +10,19 @@ echo "conda environment name is set to: $CONDA_ENV_NAME"
 
 # Create overall workspace
 source ${SCRIPT_DIR}/source_common.sh
+
+run_conda() {
+  LD_LIBRARY_PATH="$CONDA_ROOT/lib:${LD_LIBRARY_PATH:-}" \
+    CONDA_SOLVER=classic \
+    "$CONDA_ROOT/bin/conda" "$@"
+}
+
+run_mamba() {
+  LD_LIBRARY_PATH="$CONDA_ROOT/lib:${LD_LIBRARY_PATH:-}" \
+    MAMBA_ROOT_PREFIX=$CONDA_ROOT \
+    "$CONDA_ROOT/bin/mamba" "$@"
+}
+
 ENV_ROOT=$CONDA_ROOT/envs/$CONDA_ENV_NAME
 SENTINEL_FILE=${WORKSPACE_DIR}/.env_setup_finished_$CONDA_ENV_NAME
 echo "SENTINEL_FILE: $SENTINEL_FILE"
@@ -27,20 +40,22 @@ if [[ ! -f $SENTINEL_FILE ]]; then
 
   # Create the conda environment
   if [[ ! -d $ENV_ROOT ]]; then
-    $CONDA_ROOT/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-    $CONDA_ROOT/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-    if [[ ! -f $CONDA_ROOT/bin/mamba ]]; then
-      $CONDA_ROOT/bin/conda install -y mamba -c conda-forge -n base
+    run_conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+    run_conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+    run_conda install -y -n base -c conda-forge libstdcxx-ng libgcc-ng
+    run_conda install -y mamba -c conda-forge -n base
+    if ! run_mamba create -y -n $CONDA_ENV_NAME python=3.11 -c conda-forge --override-channels; then
+      echo "mamba create failed; falling back to conda create"
+      run_conda create -y -n $CONDA_ENV_NAME python=3.11 -c conda-forge --override-channels
     fi
-    MAMBA_ROOT_PREFIX=$CONDA_ROOT $CONDA_ROOT/bin/mamba create -y -n $CONDA_ENV_NAME python=3.11 -c conda-forge --override-channels
   fi
 
   source $CONDA_ROOT/bin/activate $CONDA_ENV_NAME
 
   # Install ffmpeg for video encoding
-  conda install -c conda-forge -y ffmpeg
-  conda install -c conda-forge -y libiconv
-  conda install -c conda-forge -y libglu
+  run_conda install -c conda-forge -y ffmpeg
+  run_conda install -c conda-forge -y libiconv
+  run_conda install -c conda-forge -y libglu
 
   # Below follows https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/pip_installation.html
   # Install IsaacSim
@@ -56,7 +71,15 @@ if [[ ! -f $SENTINEL_FILE ]]; then
     git clone https://github.com/isaac-sim/IsaacLab.git --branch v2.3.0 $WORKSPACE_DIR/IsaacLab
   fi
 
-  sudo apt install -y cmake build-essential
+  if command -v cmake >/dev/null && command -v gcc >/dev/null && command -v g++ >/dev/null; then
+    echo "cmake/gcc/g++ already available; skipping apt install"
+  elif command -v sudo >/dev/null && sudo -n true 2>/dev/null; then
+    sudo apt install -y cmake build-essential
+  else
+    echo "cmake/gcc/g++ are required, but sudo install is unavailable."
+    echo "Please install cmake and build-essential manually, then re-run."
+    exit 1
+  fi
   cd $WORKSPACE_DIR/IsaacLab
   # work-around for egl_probe cmake max version issue
   export CMAKE_POLICY_VERSION_MINIMUM=3.5
