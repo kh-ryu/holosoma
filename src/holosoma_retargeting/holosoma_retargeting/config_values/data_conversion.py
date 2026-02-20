@@ -16,6 +16,8 @@ def get_default_data_conversion_config(
     has_dynamic_object: bool = False,
     output_name: str | None = None,
     once: bool = False,
+    headless: bool = False,
+    live_viser: bool = False,
 ) -> DataConversionConfig:
     """Get default data conversion configuration.
 
@@ -30,6 +32,8 @@ def get_default_data_conversion_config(
         has_dynamic_object: Whether the motion has a dynamic object.
         output_name: Name of the output motion npz file.
         once: Run the motion once and exit.
+        headless: Run conversion without creating a MuJoCo GLFW viewer.
+        live_viser: Auto-launch browser-based Viser viewer after conversion output is saved.
 
     Returns:
         DataConversionConfig: Default configuration instance.
@@ -45,6 +49,8 @@ def get_default_data_conversion_config(
         has_dynamic_object=has_dynamic_object,
         output_name=output_name,
         once=once,
+        headless=headless,
+        live_viser=live_viser,
     )
 
 

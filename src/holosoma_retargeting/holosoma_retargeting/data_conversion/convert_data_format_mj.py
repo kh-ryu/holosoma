@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -341,8 +342,43 @@ def world_body_velocities(model, data):
     return lin_w, ang_w
 
 
+def _launch_viser_after_conversion(*, output_npz_path: str, robot_urdf_path: str) -> None:
+    """Launch detached viser_body_vel_player for the converted output."""
+    viewer_script = Path(__file__).resolve().parent / "viser_body_vel_player.py"
+    cmd = [
+        sys.executable,
+        str(viewer_script),
+        "--npz_path",
+        output_npz_path,
+        "--robot_urdf",
+        robot_urdf_path,
+    ]
+
+    try:
+        proc = subprocess.Popen(  # noqa: S603
+            cmd,
+            cwd=str(Path(__file__).resolve().parents[1]),
+            start_new_session=True,
+        )
+        print(
+            f"[live-viser] Launched data_conversion/viser_body_vel_player.py "
+            f"(pid={proc.pid}) for {output_npz_path}. "
+            "Viewer URL will be printed by the launched process."
+        )
+    except Exception as exc:
+        print(
+            "[live-viser] Failed to auto-launch viewer. "
+            f"Run manually: {' '.join(cmd)} (error: {exc})"
+        )
+
+
 def run_simulator(args_cli: DataConversionConfig):
     """Runs the simulation loop."""
+    if args_cli.live_viser:
+        print(
+            "[live-viser] Enabled. Viewer auto-launch happens after conversion output is saved. "
+            "This can take a few minutes for long motions."
+        )
     joint_names = args_cli.JOINT_NAMES
     # Load motion
     device = torch.device("cpu")
@@ -413,16 +449,33 @@ def run_simulator(args_cli: DataConversionConfig):
     dof_index_list = [joint_names.index(dof_name) for dof_name in dof_name_list]
     print(dof_index_list)
 
-    # Prepare mujoco viewer
-    viewer = mjv.launch_passive(robot, robot_data, show_left_ui=False, show_right_ui=False)
-    viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_PERTFORCE] = 0
-    viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = 0
-    viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = 0
-    viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_COM] = 0
+    # Prepare MuJoCo viewer (optional in headless mode)
+    viewer = None
+    if not args_cli.headless:
+        if not os.environ.get("DISPLAY"):
+            raise RuntimeError(
+                "DISPLAY/X11 is unavailable. Re-run with --headless for conversion on a server without GUI. "
+                "For visualization, add --live-viser to auto-launch browser viewer after conversion "
+                "or use viser_player.py manually."
+            )
+        try:
+            viewer = mjv.launch_passive(robot, robot_data, show_left_ui=False, show_right_ui=False)
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to launch MuJoCo viewer. Re-run with --headless for non-GUI conversion. "
+                "For visualization, add --live-viser to auto-launch browser viewer after conversion "
+                "or use viser_player.py manually."
+            ) from exc
 
-    viewer.cam.distance = 2.0
-    viewer.cam.elevation = -20.0
-    viewer.cam.azimuth = 45.0
+    if viewer is not None:
+        viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_PERTFORCE] = 0
+        viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = 0
+        viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = 0
+        viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_COM] = 0
+
+        viewer.cam.distance = 2.0
+        viewer.cam.elevation = -20.0
+        viewer.cam.azimuth = 45.0
 
     log: dict[str, Any]
     if has_dynamic_object:
@@ -519,7 +572,8 @@ def run_simulator(args_cli: DataConversionConfig):
             )
 
         mujoco.mj_forward(robot, robot_data)
-        viewer.sync()
+        if viewer is not None:
+            viewer.sync()
 
         end_time = time.perf_counter()
         time.sleep(max(0, motion.output_dt - (end_time - start_time)))
@@ -582,10 +636,16 @@ def run_simulator(args_cli: DataConversionConfig):
             output_res_folder = Path(args_cli.output_name).parent
             os.makedirs(output_res_folder, exist_ok=True)
             np.savez(args_cli.output_name, **log)
+            if args_cli.live_viser:
+                _launch_viser_after_conversion(
+                    output_npz_path=args_cli.output_name,
+                    robot_urdf_path=robot_model_path,
+                )
 
         if args_cli.once and file_saved:
             print("[INFO]: Motion replay completed, exiting...")
-            viewer.close()
+            if viewer is not None:
+                viewer.close()
             break
 
 

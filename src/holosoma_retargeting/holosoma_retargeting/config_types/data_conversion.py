@@ -80,6 +80,12 @@ class DataConversionConfig:
     once: bool = False
     """Run the motion once and exit."""
 
+    headless: bool = False
+    """Run conversion without creating a MuJoCo GLFW viewer."""
+
+    live_viser: bool = False
+    """Auto-launch browser-based Viser viewer after conversion output is saved."""
+
     use_omniretarget_data: bool = False
     """Use OmniRetarget data format."""
 

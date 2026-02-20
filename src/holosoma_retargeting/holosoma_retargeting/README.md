@@ -133,6 +133,10 @@ python examples/parallel_robot_retarget.py --data-dir demo_data/amass_smplx_proc
 
 ## Check Visualizations of Saved Retargeting Results
 
+For server workflows, use the browser-based Viser players:
+- Use `viser_player.py` to inspect retargeted motion `qpos` files.
+- Use `data_conversion/viser_body_vel_player.py` to inspect converted files with body velocity fields.
+
 ```bash
 # Visualize object-interaction results
 python viser_player.py --robot_urdf models/g1/g1_29dof.urdf \
@@ -163,6 +167,11 @@ python viser_player.py --robot_urdf models/g1/g1_29dof.urdf \
 # Visualize AMASS results
 python viser_player.py --robot_urdf models/g1/g1_29dof.urdf \
     --qpos_npz demo_results_parallel/g1/robot_only/amass_smplx/HumanEva_S1_Box_1_stageii_original.npz
+
+# Visualize converted output with body velocity overlays
+python data_conversion/viser_body_vel_player.py \
+    --npz_path converted_res/robot_only/dance2_subject1_mj_fps50.npz \
+    --robot_urdf models/g1/g1_29dof.urdf
 ```
 
 ## Quantitative Evaluation
@@ -187,6 +196,7 @@ To prepare data for training RL whole-body tracking policies, you need to follow
 2. **Then, run the data conversion code** below to convert the retargeted `.npz` files into the format required for RL training. The conversion script takes the retargeted `.npz` files as input and outputs converted files with the specified frame rate and format.
 
 **Note**: If you run this code on Mac, please use `mjpython` instead of `python`.
+If your machine does not have X11/`DISPLAY` (common on servers), add `--headless` to conversion commands.
 
 ### Mac (using mjpython)
 
@@ -202,6 +212,18 @@ mjpython data_conversion/convert_data_format_mj.py --input_file ./demo_results/g
 python data_conversion/convert_data_format_mj.py --input_file ./demo_results/g1/robot_only/omomo/sub3_largebox_003.npz --output_fps 50 --output_name converted_res/robot_only/sub3_largebox_003_mj_fps50.npz --data_format smplh --object_name "ground" --once
 
 python data_conversion/convert_data_format_mj.py --input_file ./demo_results/g1/robot_only/lafan/dance2_subject1.npz --output_fps 50 --output_name converted_res/robot_only/dance2_subject1_mj_fps50.npz --data_format lafan --object_name "ground" --once
+```
+
+### Headless Server (no DISPLAY)
+
+```bash
+python data_conversion/convert_data_format_mj.py --input_file ./demo_results/g1/robot_only/lafan/dance2_subject1.npz --output_fps 50 --output_name converted_res/robot_only/dance2_subject1_mj_fps50.npz --data_format lafan --object_name "ground" --once --headless
+```
+
+To auto-launch a browser viewer after headless conversion finishes, add `--live-viser`:
+
+```bash
+python data_conversion/convert_data_format_mj.py --input_file ./demo_results/g1/robot_only/lafan/dance2_subject1.npz --output_fps 50 --output_name converted_res/robot_only/dance2_subject1_mj_fps50.npz --data_format lafan --object_name "ground" --once --headless --live-viser
 ```
 
 ### Robot-Object Setting
