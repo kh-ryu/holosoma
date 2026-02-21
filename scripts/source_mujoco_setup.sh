@@ -16,9 +16,11 @@ activate_conda_env "$MUJOCO_CONDA_ENV_NAME" || { return 1 2>/dev/null || exit 1;
 # Set MuJoCo-specific environment variables
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${CONDA_ROOT}/envs/$MUJOCO_CONDA_ENV_NAME/lib
 
-# MuJoCo-specific environment variables (if needed)
-# export MUJOCO_GL=egl  # For headless rendering
-# export MUJOCO_GL=osmesa  # Alternative headless option
+# Default to EGL on headless servers unless MUJOCO_GL is already set by user.
+if [ -z "${DISPLAY:-}" ] && [ -z "${MUJOCO_GL:-}" ]; then
+    export MUJOCO_GL=egl
+    echo "DISPLAY is not set. Defaulting MUJOCO_GL=egl for headless MuJoCo rendering."
+fi
 
 # Validate environment is properly activated
 if python -c "import mujoco" 2>/dev/null; then

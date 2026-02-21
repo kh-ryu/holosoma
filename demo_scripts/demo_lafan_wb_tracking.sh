@@ -132,14 +132,19 @@ else
 fi
 
 # Step 2: Run data conversion
-echo "Running data conversion..."
-CONVERT_HEADLESS_ARGS=()
-if [ -z "${DISPLAY:-}" ]; then
-    echo "DISPLAY is not set. Running data conversion in headless mode."
-    CONVERT_HEADLESS_ARGS+=(--headless)
-    CONVERT_HEADLESS_ARGS+=(--live-viser)
+CONVERTED_FILE="$RETARGETING_DIR/converted_res/robot_only/dance2_subject1_mj_fps50.npz"
+if [ -f "$CONVERTED_FILE" ]; then
+    echo "Converted file already exists at $CONVERTED_FILE. Skipping data conversion."
+else
+    echo "Running data conversion..."
+    CONVERT_HEADLESS_ARGS=()
+    if [ -z "${DISPLAY:-}" ]; then
+        echo "DISPLAY is not set. Running data conversion in headless mode."
+        CONVERT_HEADLESS_ARGS+=(--headless)
+        CONVERT_HEADLESS_ARGS+=(--live-viser)
+    fi
+    python data_conversion/convert_data_format_mj.py --input_file "$RETARGETED_FILE" --output_fps 50 --output_name "$CONVERTED_FILE" --data_format lafan --object_name "ground" --once "${CONVERT_HEADLESS_ARGS[@]}"
 fi
-python data_conversion/convert_data_format_mj.py --input_file "$RETARGETED_FILE" --output_fps 50 --output_name "$RETARGETING_DIR/converted_res/robot_only/dance2_subject1_mj_fps50.npz" --data_format lafan --object_name "ground" --once "${CONVERT_HEADLESS_ARGS[@]}"
 
 # Step 3: Source IsaacSim setup script (for whole-body tracking training)
 echo "Sourcing IsaacSim setup..."
@@ -149,8 +154,7 @@ ISAACSIM_CONDA_ENV_NAME="${ISAACSIM_CONDA_ENV_NAME:-hssim}" \
 
 # Step 4: Run whole-body tracking training
 echo "Running whole-body tracking training..."
-CONVERTED_FILE="$RETARGETING_DIR/converted_res/robot_only/dance2_subject1_mj_fps50.npz"
-DISPLAY= python src/holosoma/holosoma/train_agent.py \
+python src/holosoma/holosoma/train_agent.py \
     exp:g1-29dof-wbt \
     logger:wandb \
     --command.setup_terms.motion_command.params.motion_config.motion_file="$CONVERTED_FILE"

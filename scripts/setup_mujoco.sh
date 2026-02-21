@@ -65,6 +65,14 @@ if [[ ! -f $SENTINEL_FILE ]]; then
   OS_NAME="$(uname -s)"
   ARCH_NAME="$(uname -m)"
 
+  run_conda() {
+    # Avoid libmamba/libstdc++ compatibility issues on older system toolchains.
+    LD_LIBRARY_PATH="$CONDA_ROOT/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+    CONDA_SOLVER=classic \
+    CONDA_NO_PLUGINS=true \
+    "$CONDA_ROOT/bin/conda" --no-plugins "$@"
+  }
+
   # Install miniconda (reuse existing logic)
   if [[ ! -d $CONDA_ROOT ]]; then
     mkdir -p $CONDA_ROOT
@@ -92,13 +100,10 @@ if [[ ! -f $SENTINEL_FILE ]]; then
 
   # Create the conda environment
   if [[ ! -d $ENV_ROOT ]]; then
-    $CONDA_ROOT/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-    $CONDA_ROOT/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-    $CONDA_ROOT/bin/conda install -y mamba -c conda-forge -n base
-    MAMBA_ROOT_PREFIX=$CONDA_ROOT $CONDA_ROOT/bin/mamba create -y -n $CONDA_ENV_NAME python=3.10 -c conda-forge --override-channels
+    run_conda create -y -n $CONDA_ENV_NAME python=3.10 -c conda-forge --override-channels
   fi
 
-  source $CONDA_ROOT/bin/activate $CONDA_ENV_NAME
+  activate_conda_env "$CONDA_ENV_NAME"
 
   # Install system dependencies for MuJoCo
   # Note: These may require sudo access - document this requirement
@@ -108,11 +113,11 @@ if [[ ! -f $SENTINEL_FILE ]]; then
 
   # Install libstdcxx-ng to fix potential GLIBCXX issues (Linux only)
   if [[ "$OS_NAME" == "Linux" ]]; then
-    conda install -c conda-forge -y libstdcxx-ng
+    run_conda install -n "$CONDA_ENV_NAME" -c conda-forge -y libstdcxx-ng --override-channels
   fi
 
   # Install ffmpeg for video encoding (consistent with other envs)
-  conda install -c conda-forge -y ffmpeg
+  run_conda install -n "$CONDA_ENV_NAME" -c conda-forge -y ffmpeg --override-channels
 
   # Install MuJoCo and related packages
   echo "Installing MuJoCo Python bindings..."
@@ -212,7 +217,7 @@ if [[ "$INSTALL_WARP" == "true" ]] && [[ ! -f $WARP_SENTINEL_FILE ]]; then
   echo "Installing MuJoCo Warp (GPU acceleration)..."
 
   # Ensure conda environment is activated
-  source $CONDA_ROOT/bin/activate $CONDA_ENV_NAME
+  activate_conda_env "$CONDA_ENV_NAME"
 
   # Check NVIDIA driver version (required for CUDA 12.4+)
   MIN_DRIVER_VERSION="550.54.14"
